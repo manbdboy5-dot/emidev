@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# emidev - Multi-Protocol V2Ray/Xray Installer
+# emidev - X-UI Panel + Multi-Protocol V2Ray/Xray Installer
 # সর্বশেষ আপডেট: 2026
 
 set -e
@@ -10,6 +10,7 @@ RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
+CYAN='\033[0;36m'
 NC='\033[0m' # No Color
 
 # Check if running as root
@@ -19,23 +20,61 @@ if [[ $EUID -ne 0 ]]; then
 fi
 
 # Banner
-echo -e "${BLUE}╔════════════════════════════════════════╗${NC}"
-echo -e "${BLUE}║       ${GREEN}emidev Multi-Protocol Installer${BLUE}       ║${NC}"
-echo -e "${BLUE}║         ${YELLOW}V2Ray/Xray - VMess + VLESS + Trojan${BLUE}     ║${NC}"
-echo -e "${BLUE}╚════════════════════════════════════════╝${NC}"
+echo -e "${BLUE}╔══════════════════════════════════════════════════════════╗${NC}"
+echo -e "${BLUE}║     ${GREEN}emidev - X-UI Panel + Multi-Protocol Installer${BLUE}     ║${NC}"
+echo -e "${BLUE}║              ${YELLOW}VMess + VLESS + Reality + Trojan${BLUE}              ║${NC}"
+echo -e "${BLUE}╚══════════════════════════════════════════════════════════╝${NC}"
 echo ""
 
-# Function to install Xray-core
-install_xray() {
-    echo -e "${GREEN}📦 Xray-core ইনস্টল করা হচ্ছে...${NC}"
-    bash -c "$(curl -L https://github.com/XTLS/Xray-install/raw/main/install-release.sh)" @ install
-    echo -e "${GREEN}✅ Xray-core ইনস্টল সম্পন্ন!${NC}"
+# Function to update system
+update_system() {
+    echo -e "${GREEN}📦 সিস্টেম আপডেট করা হচ্ছে...${NC}"
+    # Kill any running apt processes
+    sudo killall apt apt-get 2>/dev/null || true
+    sleep 2
+    # Remove locks
+    sudo rm -f /var/lib/apt/lists/lock
+    sudo rm -f /var/cache/apt/archives/lock
+    sudo rm -f /var/lib/dpkg/lock-frontend
+    sudo dpkg --configure -a
+    apt update
+    apt install -y curl wget tar socat jq uuid-runtime openssl
+    echo -e "${GREEN}✅ সিস্টেম আপডেট সম্পন্ন!${NC}"
 }
 
-# Function to generate configuration
-gen_config() {
-    echo -e "${GREEN}⚙️  কনফিগারেশন জেনারেট করা হচ্ছে...${NC}"
-    mkdir -p /etc/emidev
+# Function to install X-UI Panel
+install_xui() {
+    echo -e "${GREEN}🎛️ X-UI প্যানেল ইনস্টল করা হচ্ছে...${NC}"
+    
+    # Install X-UI (Alireza0 version - best for Reality)
+    cd /root/
+    wget -O /root/xui-install.sh https://raw.githubusercontent.com/alireza0/x-ui/master/install.sh
+    chmod +x /root/xui-install.sh
+    
+    # Auto install with default settings
+    bash /root/xui-install.sh <<EOF
+1
+1
+1
+1
+EOF
+    
+    # Wait for installation to complete
+    sleep 5
+    
+    # Get X-UI credentials
+    if [ -f /usr/local/x-ui/x-ui.db ]; then
+        # Default credentials after fresh install
+        XUI_USERNAME="admin"
+        XUI_PASSWORD="admin"
+    fi
+    
+    echo -e "${GREEN}✅ X-UI প্যানেল ইনস্টল সম্পন্ন!${NC}"
+}
+
+# Function to configure X-UI
+configure_xui() {
+    echo -e "${GREEN}⚙️ X-UI কনফিগার করা হচ্ছে...${NC}"
     
     # Get server IP
     SERVER_IP=$(curl -s https://api.ipify.org)
@@ -43,46 +82,65 @@ gen_config() {
         SERVER_IP=$(curl -s ipv4.icanhazip.com)
     fi
     
+    # User inputs
     echo ""
-    echo -e "${YELLOW}🔧 কিছু তথ্য দিন:${NC}"
+    echo -e "${YELLOW}🔧 X-UI সেটআপ করার জন্য কিছু তথ্য দিন:${NC}"
     echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
     
-    # User Inputs
-    read -p "👉 আপনার ডোমেইন/সাবডোমেইন লিখুন (যেটা এই IP: $SERVER_IP এ পয়েন্ট করা আছে): " DOMAIN
+    read -p "👉 X-UI প্যানেলের পোর্ট (ডিফল্ট: 54321): " XUI_PORT
+    XUI_PORT=${XUI_PORT:-54321}
+    
+    read -p "👉 X-UI এর ইউজারনেম (ডিফল্ট: emidev): " XUI_USER
+    XUI_USER=${XUI_USER:-emidev}
+    
+    read -p "👉 X-UI এর পাসওয়ার্ড (ডিফল্ট: random): " XUI_PASS
+    if [[ -z "$XUI_PASS" ]]; then
+        XUI_PASS=$(openssl rand -hex 8)
+    fi
+    
+    read -p "👉 আপনার ডোমেইন (যেটা এই IP: $SERVER_IP এ পয়েন্ট করা আছে): " DOMAIN
     while [[ -z "$DOMAIN" ]]; do
         echo -e "${RED}ডোমেইন আবশ্যক!${NC}"
-        read -p "👉 আপনার ডোমেইন/সাবডোমেইন লিখুন: " DOMAIN
+        read -p "👉 আপনার ডোমেইন: " DOMAIN
     done
     
-    read -p "👉 REALITY এর জন্য ক্যামোফ্লাজ সাইট [www.microsoft.com]: " FALLBACK_SITE
-    FALLBACK_SITE=${FALLBACK_SITE:-www.microsoft.com}
+    # Update X-UI config
+    cat > /usr/local/x-ui/x-ui.config.json <<EOF
+{
+    "web": {
+        "port": $XUI_PORT,
+        "secret": "",
+        "basePath": "/",
+        "username": "$XUI_USER",
+        "password": "$XUI_PASS"
+    },
+    "log": {
+        "level": "info"
+    },
+    "xray": {
+        "config": "/usr/local/x-ui/bin/config.json",
+        "binary": "/usr/local/x-ui/bin/xray-linux-amd64"
+    }
+}
+EOF
     
-    read -p "👉 WebSocket পাথ লিখুন [emidev]: " WSPATH
-    WSPATH=${WSPATH:-emidev}
+    # Create default inbound configs via X-UI API
+    # Wait for X-UI to start
+    systemctl restart x-ui
     
-    echo ""
-    echo -e "${YELLOW}🔑 কী জেনারেট করা হচ্ছে (একটু অপেক্ষা করুন)...${NC}"
+    sleep 5
     
     # Generate UUID
     UUID=$(cat /proc/sys/kernel/random/uuid)
     
-    # Generate Reality Keys
-    REALITY_KEYS=$(/usr/local/bin/xray x25519)
-    PRIVATE_KEY=$(echo "$REALITY_KEYS" | head -1 | awk '{print $3}')
-    PUBLIC_KEY=$(echo "$REALITY_KEYS" | tail -1 | awk '{print $3}')
-    SHORT_ID=$(openssl rand -hex 8)
+    # Login to X-UI and setup inbounds
+    echo -e "${YELLOW}📡 ইনবাউন্ড সেটআপ করা হচ্ছে...${NC}"
     
-    # Generate flow
-    FLOW="xtls-rprx-vision"
-    
-    # Create config.json
-    echo -e "${GREEN}📝 কনফিগ ফাইল তৈরি হচ্ছে...${NC}"
-    cat > /usr/local/etc/xray/config.json <<EOF
+    # Simple config file as backup
+    cat > /usr/local/x-ui/bin/config.json <<EOF
 {
   "log": {
-    "loglevel": "warning",
-    "access": "/var/log/xray/access.log",
-    "error": "/var/log/xray/error.log"
+    "loglevel": "warning"
   },
   "inbounds": [
     {
@@ -91,11 +149,7 @@ gen_config() {
       "protocol": "vless",
       "settings": {
         "clients": [
-          { 
-            "id": "$UUID", 
-            "flow": "$FLOW",
-            "email": "emidev@reality"
-          }
+          { "id": "$UUID", "flow": "xtls-rprx-vision" }
         ],
         "decryption": "none"
       },
@@ -103,18 +157,11 @@ gen_config() {
         "network": "tcp",
         "security": "reality",
         "realitySettings": {
-          "show": false,
-          "dest": "$FALLBACK_SITE:443",
-          "xver": 0,
-          "serverNames": ["$DOMAIN", "$FALLBACK_SITE"],
-          "privateKey": "$PRIVATE_KEY",
-          "shortIds": ["$SHORT_ID"]
+          "dest": "www.microsoft.com:443",
+          "serverNames": ["$DOMAIN", "www.microsoft.com"],
+          "privateKey": "$(cat /usr/local/x-ui/bin/xray-linux-amd64 x25519 | head -1 | awk '{print $3}')",
+          "shortIds": ["$(openssl rand -hex 8)"]
         }
-      },
-      "sniffing": {
-        "enabled": true,
-        "destOverride": ["http", "tls", "quic"],
-        "routeOnly": false
       }
     },
     {
@@ -122,186 +169,99 @@ gen_config() {
       "port": 8443,
       "protocol": "vmess",
       "settings": {
-        "clients": [
-          { 
-            "id": "$UUID",
-            "alterId": 0,
-            "email": "emidev@vmess"
-          }
-        ]
+        "clients": [{ "id": "$UUID", "alterId": 0 }]
       },
       "streamSettings": {
         "network": "ws",
         "security": "tls",
-        "tlsSettings": { 
-          "serverName": "$DOMAIN",
-          "alpn": ["http/1.1", "h2"],
-          "minVersion": "1.2"
-        },
-        "wsSettings": { 
-          "path": "/$WSPATH",
-          "headers": {
-            "Host": "$DOMAIN"
-          }
-        }
-      },
-      "sniffing": {
-        "enabled": true,
-        "destOverride": ["http", "tls"]
+        "tlsSettings": { "serverName": "$DOMAIN" },
+        "wsSettings": { "path": "/emidev" }
       }
     },
     {
       "listen": "0.0.0.0",
       "port": 8080,
       "protocol": "trojan",
-      "settings": { 
-        "clients": [
-          { 
-            "password": "$UUID",
-            "email": "emidev@trojan"
-          }
-        ],
-        "fallbacks": [
-          {
-            "dest": 80
-          }
-        ]
-      },
-      "streamSettings": {
-        "network": "tcp",
-        "security": "none"
-      },
-      "sniffing": {
-        "enabled": true,
-        "destOverride": ["http", "tls"]
-      }
+      "settings": { "clients": [{ "password": "$UUID" }] }
     }
   ],
   "outbounds": [
     {
       "protocol": "freedom",
-      "tag": "direct",
-      "settings": {
-        "domainStrategy": "UseIP"
-      }
-    },
-    {
-      "protocol": "blackhole",
-      "tag": "block",
-      "settings": {}
+      "tag": "direct"
     }
-  ],
-  "routing": {
-    "domainStrategy": "IPIfNonMatch",
-    "rules": [
-      {
-        "type": "field",
-        "ip": ["geoip:private"],
-        "outboundTag": "block"
-      },
-      {
-        "type": "field",
-        "domain": ["geosite:category-ads-all"],
-        "outboundTag": "block"
-      }
-    ]
-  }
+  ]
 }
 EOF
-
-    # Create client information file
+    
+    # Save info
     cat > /root/emidev_info.txt <<EOF
 ╔══════════════════════════════════════════════════════════════╗
-║           🔐 emidev Configuration Information 🔐             ║
+║           🔐 emidev - X-UI Panel Information 🔐              ║
 ╚══════════════════════════════════════════════════════════════╝
 
-📅 Created: $(date)
 🌐 Server IP: $SERVER_IP
 🔗 Domain: $DOMAIN
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-🔷 PROTOCOL 1: VLESS + REALITY (Recommended - Best Anti-Detection)
+🎛️ X-UI PANEL ACCESS:
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Address (সার্ভার): $DOMAIN  or  $SERVER_IP
-Port: 443
-UUID: $UUID
-Flow: $FLOW
-Security: reality
-Public Key: $PUBLIC_KEY
-Short ID: $SHORT_ID
-Server Name (SNI): $DOMAIN
-Fingerprint: chrome
+URL: http://$SERVER_IP:$XUI_PORT
+Username: $XUI_USER
+Password: $XUI_PASS
 
-📱 Reality Config (Copy this for Sing-box/Shadowrocket/Nekobox):
-vless://$UUID@$DOMAIN:443?encryption=none&flow=$FLOW&security=reality&sni=$DOMAIN&fp=chrome&pbk=$PUBLIC_KEY&sid=$SHORT_ID&type=tcp&headerType=none#$DOMAIN-REALITY
+⚠️ প্যানেল লগইন করার পর:
+1. ইনবাউন্ডস এ গিয়ে নতুন ইউজার যোগ করুন
+2. আপনার পছন্দমত সেটিংস কনফিগার করুন
+3. ক্লায়েন্ট কনফিগ কপি করে ব্যবহার করুন
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-🔷 PROTOCOL 2: VMess + WebSocket + TLS (CDN Compatible)
+📱 QUICK CONFIG (Backup - Auto Created):
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Address: $DOMAIN
-Port: 8443
-UUID: $UUID
-Alter ID: 0
-Security: auto
-Network: ws
-Path: /$WSPATH
-TLS: ON
-SNI: $DOMAIN
+VLESS Reality:
+  Address: $DOMAIN
+  Port: 443
+  UUID: $UUID
 
-📱 VMess Config (Copy this for V2Ray clients):
-vmess://$(echo -n "{\"v\":\"2\",\"ps\":\"$DOMAIN-VMESS\",\"add\":\"$DOMAIN\",\"port\":\"8443\",\"id\":\"$UUID\",\"aid\":\"0\",\"net\":\"ws\",\"type\":\"none\",\"host\":\"$DOMAIN\",\"path\":\"/$WSPATH\",\"tls\":\"tls\"}" | base64 -w 0)
+VMess + TLS:
+  Address: $DOMAIN
+  Port: 8443
+  UUID: $UUID
+  Path: /emidev
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-🔷 PROTOCOL 3: Trojan (Legacy Support)
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Address: $SERVER_IP  or  $DOMAIN
-Port: 8080
-Password: $UUID
-Network: tcp
-Security: none
-
-📱 Trojan Config:
-trojan://$UUID@$SERVER_IP:8080#$DOMAIN-TROJAN
+Trojan:
+  Address: $SERVER_IP
+  Port: 8080
+  Password: $UUID
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-⚠️  IMPORTANT NOTES:
-• সব কানেকশন একই সাথে কাজ করবে
-• Reality প্রোটোকল সবচেয়ে সুরক্ষিত (CDN ছাড়া ব্যবহার করুন)
-• VMess + TLS CDN এর মাধ্যমে ব্যবহার করতে পারেন
-• কনফিগারেশন ফাইল লোকেশন: /usr/local/etc/xray/config.json
 
 🔧 Management Commands:
-• Restart Xray: systemctl restart xray
-• Check Status: systemctl status xray
-• View Logs: journalctl -u xray -f
-• Show Info: cat /root/emidev_info.txt
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+X-UI Panel: systemctl restart x-ui
+Xray Core: systemctl restart xray
+Show Info: cat /root/emidev_info.txt
+X-UI Logs: journalctl -u x-ui -f
+Xray Logs: journalctl -u xray -f
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 EOF
 
     echo ""
-    echo -e "${GREEN}✅ কনফিগারেশন সফলভাবে তৈরি হয়েছে!${NC}"
-    echo -e "${YELLOW}📄 সব তথ্য এই ফাইলে সেভ করা আছে: /root/emidev_info.txt${NC}"
-    echo ""
-    echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-    cat /root/emidev_info.txt
+    echo -e "${GREEN}✅ X-UI কনফিগার সম্পন্ন!${NC}"
 }
 
 # Function to setup firewall
 setup_firewall() {
     echo -e "${GREEN}🔥 ফায়ারওয়াল কনফিগার করা হচ্ছে...${NC}"
     
-    # Check if ufw is installed
     if ! command -v ufw &> /dev/null; then
         apt update
         apt install ufw -y
     fi
     
-    # Configure UFW
     ufw --force disable
     ufw default deny incoming
     ufw default allow outgoing
@@ -309,72 +269,79 @@ setup_firewall() {
     ufw allow 443/tcp comment 'VLESS Reality'
     ufw allow 8443/tcp comment 'VMess WebSocket'
     ufw allow 8080/tcp comment 'Trojan'
+    ufw allow "$XUI_PORT"/tcp comment 'X-UI Panel'
     ufw --force enable
     
     echo -e "${GREEN}✅ ফায়ারওয়াল কনফিগার সম্পন্ন!${NC}"
 }
 
-# Function to setup BBR (Better performance)
+# Function to enable BBR
 setup_bbr() {
     echo -e "${GREEN}🚀 BBR কনজেশন কন্ট্রোল সেটআপ করা হচ্ছে...${NC}"
     
-    # Check if BBR is already enabled
-    if [[ $(sysctl net.ipv4.tcp_congestion_control | awk '{print $3}') == "bbr" ]]; then
-        echo -e "${GREEN}✅ BBR ইতিমধ্যে সক্রিয়!${NC}"
-        return
-    fi
-    
-    # Enable BBR
-    cat >> /etc/sysctl.conf <<EOF
+    if [[ $(sysctl net.ipv4.tcp_congestion_control | awk '{print $3}') != "bbr" ]]; then
+        cat >> /etc/sysctl.conf <<EOF
 # BBR Congestion Control
 net.core.default_qdisc = fq
 net.ipv4.tcp_congestion_control = bbr
 EOF
-    
-    sysctl -p
-    echo -e "${GREEN}✅ BBR সক্রিয় করা হয়েছে!${NC}"
+        sysctl -p
+        echo -e "${GREEN}✅ BBR সক্রিয় করা হয়েছে!${NC}"
+    else
+        echo -e "${GREEN}✅ BBR ইতিমধ্যে সক্রিয়!${NC}"
+    fi
 }
 
 # Function to restart services
 restart_services() {
-    echo -e "${GREEN}🔄 Xray সার্ভিস রিস্টার্ট করা হচ্ছে...${NC}"
+    echo -e "${GREEN}🔄 সার্ভিস রিস্টার্ট করা হচ্ছে...${NC}"
+    
+    systemctl restart x-ui
+    systemctl enable x-ui
     systemctl restart xray
     systemctl enable xray
     
-    # Check if Xray is running
+    sleep 3
+    
+    if systemctl is-active --quiet x-ui; then
+        echo -e "${GREEN}✅ X-UI প্যানেল সফলভাবে চালু হয়েছে!${NC}"
+    else
+        echo -e "${RED}❌ X-UI চালুতে সমস্যা!${NC}"
+    fi
+    
     if systemctl is-active --quiet xray; then
         echo -e "${GREEN}✅ Xray সফলভাবে চালু হয়েছে!${NC}"
     else
-        echo -e "${RED}❌ Xray চালু করতে সমস্যা হয়েছে!${NC}"
-        echo -e "${YELLOW}লগ চেক করুন: journalctl -u xray -f${NC}"
-        exit 1
+        echo -e "${RED}❌ Xray চালুতে সমস্যা!${NC}"
     fi
 }
 
 # Main execution
 main() {
-    install_xray
-    sleep 2
-    gen_config
+    update_system
+    install_xui
+    configure_xui
     setup_firewall
     setup_bbr
     restart_services
     
     echo ""
-    echo -e "${GREEN}╔════════════════════════════════════════╗${NC}"
-    echo -e "${GREEN}║     🎉 ইনস্টলেশন সম্পূর্ণ হয়েছে! 🎉     ║${NC}"
-    echo -e "${GREEN}╚════════════════════════════════════════╝${NC}"
+    echo -e "${GREEN}╔══════════════════════════════════════════════════════════╗${NC}"
+    echo -e "${GREEN}║     🎉 emidev - X-UI Panel ইনস্টলেশন সম্পূর্ণ! 🎉        ║${NC}"
+    echo -e "${GREEN}╚══════════════════════════════════════════════════════════╝${NC}"
     echo ""
-    echo -e "${YELLOW}📋 আপনার কনফিগারেশন সংরক্ষিত হয়েছে:${NC}"
-    echo -e "${BLUE}   cat /root/emidev_info.txt${NC}"
+    
+    # Display info
+    cat /root/emidev_info.txt
+    
     echo ""
-    echo -e "${YELLOW}🔧 Xray ম্যানেজমেন্ট:${NC}"
-    echo -e "${BLUE}   systemctl restart xray${NC} - রিস্টার্ট"
-    echo -e "${BLUE}   systemctl status xray${NC}  - স্ট্যাটাস"
-    echo -e "${BLUE}   systemctl stop xray${NC}     - স্টপ"
-    echo -e "${BLUE}   systemctl start xray${NC}    - স্টার্ট"
+    echo -e "${YELLOW}💡 গুরুত্বপূর্ণ টিপস:${NC}"
+    echo -e "${CYAN}• X-UI প্যানেল খুলে ইনবাউন্ড কাস্টমাইজ করুন${NC}"
+    echo -e "${CYAN}• Reality এর জন্য Public Key প্যানেলে দেখাবে${NC}"
+    echo -e "${CYAN}• ক্লায়েন্ট কনফিগ প্যানেল থেকে কপি করুন${NC}"
     echo ""
+    echo -e "${BLUE}📋 সব তথ্য সংরক্ষিত: ${YELLOW}cat /root/emidev_info.txt${NC}"
 }
 
-# Run main function
+# Run main
 main
