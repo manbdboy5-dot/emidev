@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # emidev - X-UI Panel + Multi-Protocol V2Ray/Xray Installer
-# সর্বশেষ আপডেট: 2026
+# কপিরাইট: manbdboy5-dot/emidev
 
 set -e
 
@@ -11,133 +11,167 @@ GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 CYAN='\033[0;36m'
-NC='\033[0m' # No Color
+NC='\033[0m'
 
 # Check if running as root
 if [[ $EUID -ne 0 ]]; then
-   echo -e "${RED}❌ এই স্ক্রিপ্ট চালানোর জন্য আপনাকে root ইউজার হতে হবে (sudo ব্যবহার করুন)।${NC}" 
+   echo -e "${RED}❌ এই স্ক্রিপ্ট চালানোর জন্য root ইউজার হতে হবে!${NC}" 
+   echo -e "${YELLOW}👉 ব্যবহার করুন: sudo bash install.sh${NC}"
    exit 1
 fi
 
+# Clear screen
+clear
+
 # Banner
-echo -e "${BLUE}╔══════════════════════════════════════════════════════════╗${NC}"
-echo -e "${BLUE}║     ${GREEN}emidev - X-UI Panel + Multi-Protocol Installer${BLUE}     ║${NC}"
-echo -e "${BLUE}║              ${YELLOW}VMess + VLESS + Reality + Trojan${BLUE}              ║${NC}"
-echo -e "${BLUE}╚══════════════════════════════════════════════════════════╝${NC}"
+echo -e "${BLUE}╔══════════════════════════════════════════════════════════════╗${NC}"
+echo -e "${BLUE}║                                                              ║${NC}"
+echo -e "${BLUE}║     ${GREEN}███████ ███    ███ ██ ██████  ███████ ██    ██${BLUE}      ║${NC}"
+echo -e "${BLUE}║     ${GREEN}██      ████  ████ ██ ██   ██ ██      ██    ██${BLUE}      ║${NC}"
+echo -e "${BLUE}║     ${GREEN}█████   ██ ████ ██ ██ ██   ██ █████   ██    ██${BLUE}      ║${NC}"
+echo -e "${BLUE}║     ${GREEN}██      ██  ██  ██ ██ ██   ██ ██       ██  ██${BLUE}       ║${NC}"
+echo -e "${BLUE}║     ${GREEN}███████ ██      ██ ██ ██████  ███████    ████${BLUE}       ║${NC}"
+echo -e "${BLUE}║                                                              ║${NC}"
+echo -e "${BLUE}║        ${YELLOW}X-UI Panel + Multi-Protocol Installer${BLUE}               ║${NC}"
+echo -e "${BLUE}║                    ${CYAN}by manbdboy5-dot${BLUE}                           ║${NC}"
+echo -e "${BLUE}╚══════════════════════════════════════════════════════════════╝${NC}"
 echo ""
 
 # Function to update system
 update_system() {
     echo -e "${GREEN}📦 সিস্টেম আপডেট করা হচ্ছে...${NC}"
+    
     # Kill any running apt processes
     sudo killall apt apt-get 2>/dev/null || true
     sleep 2
+    
     # Remove locks
     sudo rm -f /var/lib/apt/lists/lock
     sudo rm -f /var/cache/apt/archives/lock
     sudo rm -f /var/lib/dpkg/lock-frontend
-    sudo dpkg --configure -a
+    
+    # Fix dpkg
+    sudo dpkg --configure -a 2>/dev/null || true
+    
+    # Update system
     apt update
-    apt install -y curl wget tar socat jq uuid-runtime openssl
+    apt install -y curl wget tar socat jq uuid-runtime openssl ufw systemd
+    
     echo -e "${GREEN}✅ সিস্টেম আপডেট সম্পন্ন!${NC}"
 }
 
-# Function to install X-UI Panel
+# Function to install X-UI
 install_xui() {
     echo -e "${GREEN}🎛️ X-UI প্যানেল ইনস্টল করা হচ্ছে...${NC}"
+    echo ""
     
-    # Install X-UI (Alireza0 version - best for Reality)
-    cd /root/
-    wget -O /root/xui-install.sh https://raw.githubusercontent.com/alireza0/x-ui/master/install.sh
-    chmod +x /root/xui-install.sh
+    # Download X-UI install script
+    wget -q -O /tmp/xui-install.sh https://raw.githubusercontent.com/mhsanaei/3x-ui/master/install.sh
     
-    # Auto install with default settings
-    bash /root/xui-install.sh <<EOF
-1
-1
-1
-1
-EOF
-    
-    # Wait for installation to complete
-    sleep 5
-    
-    # Get X-UI credentials
-    if [ -f /usr/local/x-ui/x-ui.db ]; then
-        # Default credentials after fresh install
-        XUI_USERNAME="admin"
-        XUI_PASSWORD="admin"
+    if [ ! -f /tmp/xui-install.sh ]; then
+        echo -e "${RED}❌ ডাউনলোড ব্যর্থ! চেক করুন ইন্টারনেট সংযোগ${NC}"
+        exit 1
     fi
+    
+    chmod +x /tmp/xui-install.sh
+    
+    # Set variables for auto-install
+    export XUI_PORT="54321"
+    export XUI_USERNAME="emidev"
+    export XUI_PASSWORD="EmiDev@2026"
+    
+    # Run X-UI installation
+    bash /tmp/xui-install.sh
     
     echo -e "${GREEN}✅ X-UI প্যানেল ইনস্টল সম্পন্ন!${NC}"
 }
 
-# Function to configure X-UI
-configure_xui() {
-    echo -e "${GREEN}⚙️ X-UI কনফিগার করা হচ্ছে...${NC}"
+# Function to get server info
+get_server_info() {
+    echo ""
+    echo -e "${YELLOW}🔧 সার্ভার তথ্য সংগ্রহ করা হচ্ছে...${NC}"
     
     # Get server IP
-    SERVER_IP=$(curl -s https://api.ipify.org)
+    SERVER_IP=$(curl -s -4 https://api.ipify.org 2>/dev/null)
     if [[ -z "$SERVER_IP" ]]; then
-        SERVER_IP=$(curl -s ipv4.icanhazip.com)
+        SERVER_IP=$(curl -s -4 ipv4.icanhazip.com 2>/dev/null)
+    fi
+    if [[ -z "$SERVER_IP" ]]; then
+        SERVER_IP=$(hostname -I | awk '{print $1}')
     fi
     
-    # User inputs
+    echo -e "${CYAN}🌐 সার্ভার IP: ${GREEN}$SERVER_IP${NC}"
     echo ""
-    echo -e "${YELLOW}🔧 X-UI সেটআপ করার জন্য কিছু তথ্য দিন:${NC}"
-    echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
     
-    read -p "👉 X-UI প্যানেলের পোর্ট (ডিফল্ট: 54321): " XUI_PORT
-    XUI_PORT=${XUI_PORT:-54321}
+    # Get domain
+    read -p "$(echo -e ${YELLOW}👉 আপনার ডোমেইন লিখুন (যেটা $SERVER_IP এ পয়েন্ট করা): ${NC})" DOMAIN
     
-    read -p "👉 X-UI এর ইউজারনেম (ডিফল্ট: emidev): " XUI_USER
-    XUI_USER=${XUI_USER:-emidev}
-    
-    read -p "👉 X-UI এর পাসওয়ার্ড (ডিফল্ট: random): " XUI_PASS
-    if [[ -z "$XUI_PASS" ]]; then
-        XUI_PASS=$(openssl rand -hex 8)
-    fi
-    
-    read -p "👉 আপনার ডোমেইন (যেটা এই IP: $SERVER_IP এ পয়েন্ট করা আছে): " DOMAIN
     while [[ -z "$DOMAIN" ]]; do
-        echo -e "${RED}ডোমেইন আবশ্যক!${NC}"
-        read -p "👉 আপনার ডোমেইন: " DOMAIN
+        echo -e "${RED}❌ ডোমেইন আবশ্যক!${NC}"
+        read -p "$(echo -e ${YELLOW}👉 ডোমেইন লিখুন: ${NC})" DOMAIN
     done
     
-    # Update X-UI config
-    cat > /usr/local/x-ui/x-ui.config.json <<EOF
-{
-    "web": {
-        "port": $XUI_PORT,
-        "secret": "",
-        "basePath": "/",
-        "username": "$XUI_USER",
-        "password": "$XUI_PASS"
-    },
-    "log": {
-        "level": "info"
-    },
-    "xray": {
-        "config": "/usr/local/x-ui/bin/config.json",
-        "binary": "/usr/local/x-ui/bin/xray-linux-amd64"
-    }
+    # Generate UUID
+    UUID=$(uuidgen 2>/dev/null || cat /proc/sys/kernel/random/uuid)
+    
+    echo -e "${GREEN}✅ ডোমেইন সেভ করা হয়েছে: $DOMAIN${NC}"
 }
+
+# Function to configure firewall
+setup_firewall() {
+    echo -e "${GREEN}🔥 ফায়ারওয়াল কনফিগার করা হচ্ছে...${NC}"
+    
+    # Reset UFW
+    ufw --force disable
+    ufw default deny incoming
+    ufw default allow outgoing
+    
+    # Allow ports
+    ufw allow 22/tcp comment 'SSH'
+    ufw allow 80/tcp comment 'HTTP'
+    ufw allow 443/tcp comment 'HTTPS/VLESS Reality'
+    ufw allow 8443/tcp comment 'VMess WebSocket'
+    ufw allow 8080/tcp comment 'Trojan'
+    ufw allow 54321/tcp comment 'X-UI Panel'
+    
+    # Enable UFW
+    echo "y" | ufw enable
+    
+    echo -e "${GREEN}✅ ফায়ারওয়াল কনফিগার সম্পন্ন!${NC}"
+}
+
+# Function to enable BBR
+setup_bbr() {
+    echo -e "${GREEN}🚀 BBR কনজেশন কন্ট্রোল সেটআপ করা হচ্ছে...${NC}"
+    
+    # Check if BBR is already enabled
+    if [[ $(sysctl net.ipv4.tcp_congestion_control 2>/dev/null | awk '{print $3}') == "bbr" ]]; then
+        echo -e "${GREEN}✅ BBR ইতিমধ্যে সক্রিয়!${NC}"
+        return
+    fi
+    
+    # Enable BBR
+    cat >> /etc/sysctl.conf <<EOF
+
+# BBR Congestion Control for better speed
+net.core.default_qdisc = fq
+net.ipv4.tcp_congestion_control = bbr
 EOF
     
-    # Create default inbound configs via X-UI API
-    # Wait for X-UI to start
-    systemctl restart x-ui
+    sysctl -p 2>/dev/null || true
     
-    sleep 5
+    echo -e "${GREEN}✅ BBR সক্রিয় করা হয়েছে!${NC}"
+}
+
+# Function to create backup config
+create_backup_config() {
+    echo -e "${GREEN}📝 ব্যাকআপ কনফিগ তৈরি করা হচ্ছে...${NC}"
     
-    # Generate UUID
-    UUID=$(cat /proc/sys/kernel/random/uuid)
+    # Create config directory
+    mkdir -p /etc/emidev
     
-    # Login to X-UI and setup inbounds
-    echo -e "${YELLOW}📡 ইনবাউন্ড সেটআপ করা হচ্ছে...${NC}"
-    
-    # Simple config file as backup
-    cat > /usr/local/x-ui/bin/config.json <<EOF
+    # Create backup config.json
+    cat > /etc/emidev/config.json <<EOF
 {
   "log": {
     "loglevel": "warning"
@@ -149,7 +183,10 @@ EOF
       "protocol": "vless",
       "settings": {
         "clients": [
-          { "id": "$UUID", "flow": "xtls-rprx-vision" }
+          { 
+            "id": "$UUID",
+            "flow": "xtls-rprx-vision"
+          }
         ],
         "decryption": "none"
       },
@@ -158,8 +195,9 @@ EOF
         "security": "reality",
         "realitySettings": {
           "dest": "www.microsoft.com:443",
-          "serverNames": ["$DOMAIN", "www.microsoft.com"],
-          "privateKey": "$(cat /usr/local/x-ui/bin/xray-linux-amd64 x25519 | head -1 | awk '{print $3}')",
+          "serverNames": ["$DOMAIN", "www.microsoft.com", "www.bing.com"],
+          "privateKey": "YOUR_PRIVATE_KEY",
+          "publicKey": "YOUR_PUBLIC_KEY",
           "shortIds": ["$(openssl rand -hex 8)"]
         }
       }
@@ -169,20 +207,35 @@ EOF
       "port": 8443,
       "protocol": "vmess",
       "settings": {
-        "clients": [{ "id": "$UUID", "alterId": 0 }]
+        "clients": [
+          { 
+            "id": "$UUID",
+            "alterId": 0
+          }
+        ]
       },
       "streamSettings": {
         "network": "ws",
         "security": "tls",
-        "tlsSettings": { "serverName": "$DOMAIN" },
-        "wsSettings": { "path": "/emidev" }
+        "tlsSettings": { 
+          "serverName": "$DOMAIN"
+        },
+        "wsSettings": { 
+          "path": "/emidev"
+        }
       }
     },
     {
       "listen": "0.0.0.0",
       "port": 8080,
       "protocol": "trojan",
-      "settings": { "clients": [{ "password": "$UUID" }] }
+      "settings": { 
+        "clients": [
+          { 
+            "password": "$UUID"
+          }
+        ]
+      }
     }
   ],
   "outbounds": [
@@ -194,153 +247,136 @@ EOF
 }
 EOF
     
-    # Save info
+    echo -e "${GREEN}✅ ব্যাকআপ কনফিগ তৈরি হয়েছে: /etc/emidev/config.json${NC}"
+}
+
+# Function to save installation info
+save_info() {
     cat > /root/emidev_info.txt <<EOF
-╔══════════════════════════════════════════════════════════════╗
-║           🔐 emidev - X-UI Panel Information 🔐              ║
-╚══════════════════════════════════════════════════════════════╝
-
-🌐 Server IP: $SERVER_IP
-🔗 Domain: $DOMAIN
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-🎛️ X-UI PANEL ACCESS:
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-URL: http://$SERVER_IP:$XUI_PORT
-Username: $XUI_USER
-Password: $XUI_PASS
-
-⚠️ প্যানেল লগইন করার পর:
-1. ইনবাউন্ডস এ গিয়ে নতুন ইউজার যোগ করুন
-2. আপনার পছন্দমত সেটিংস কনফিগার করুন
-3. ক্লায়েন্ট কনফিগ কপি করে ব্যবহার করুন
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-📱 QUICK CONFIG (Backup - Auto Created):
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-VLESS Reality:
-  Address: $DOMAIN
-  Port: 443
-  UUID: $UUID
-
-VMess + TLS:
-  Address: $DOMAIN
-  Port: 8443
-  UUID: $UUID
-  Path: /emidev
-
-Trojan:
-  Address: $SERVER_IP
-  Port: 8080
-  Password: $UUID
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-🔧 Management Commands:
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-X-UI Panel: systemctl restart x-ui
-Xray Core: systemctl restart xray
-Show Info: cat /root/emidev_info.txt
-X-UI Logs: journalctl -u x-ui -f
-Xray Logs: journalctl -u xray -f
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+╔══════════════════════════════════════════════════════════════════════╗
+║                    🔐 emidev INSTALLATION INFO 🔐                     ║
+╠══════════════════════════════════════════════════════════════════════╣
+║                                                                      ║
+║  📅 Install Date: $(date '+%Y-%m-%d %H:%M:%S')                       ║
+║  🌐 Server IP: $SERVER_IP                                            ║
+║  🔗 Domain: $DOMAIN                                                  ║
+║  🔑 UUID: $UUID                                                      ║
+║                                                                      ║
+╠══════════════════════════════════════════════════════════════════════╣
+║                      🎛️ X-UI PANEL ACCESS                            ║
+╠══════════════════════════════════════════════════════════════════════╣
+║                                                                      ║
+║  🌐 URL: http://$SERVER_IP:54321                                     ║
+║  👤 Username: emidev                                                 ║
+║  🔒 Password: EmiDev@2026                                            ║
+║                                                                      ║
+╠══════════════════════════════════════════════════════════════════════╣
+║                      📱 PROTOCOL CONFIGS                              ║
+╠══════════════════════════════════════════════════════════════════════╣
+║                                                                      ║
+║  🔷 VLESS + REALITY (Port 443)                                       ║
+║     Server: $DOMAIN                                                  ║
+║     Port: 443                                                        ║
+║     UUID: $UUID                                                      ║
+║     Flow: xtls-rprx-vision                                           ║
+║                                                                      ║
+║  🔷 VMess + WS + TLS (Port 8443)                                     ║
+║     Server: $DOMAIN                                                  ║
+║     Port: 8443                                                       ║
+║     UUID: $UUID                                                      ║
+║     Path: /emidev                                                    ║
+║                                                                      ║
+║  🔷 TROJAN (Port 8080)                                               ║
+║     Server: $SERVER_IP                                               ║
+║     Port: 8080                                                       ║
+║     Password: $UUID                                                  ║
+║                                                                      ║
+╠══════════════════════════════════════════════════════════════════════╣
+║                      🔧 MANAGE COMMANDS                               ║
+╠══════════════════════════════════════════════════════════════════════╣
+║                                                                      ║
+║  X-UI Panel:  systemctl status x-ui                                  ║
+║  X-UI Restart: systemctl restart x-ui                                ║
+║  Xray Status:  systemctl status xray                                 ║
+║  Show Info:    cat /root/emidev_info.txt                             ║
+║                                                                      ║
+╚══════════════════════════════════════════════════════════════════════╝
 EOF
 
-    echo ""
-    echo -e "${GREEN}✅ X-UI কনফিগার সম্পন্ন!${NC}"
-}
-
-# Function to setup firewall
-setup_firewall() {
-    echo -e "${GREEN}🔥 ফায়ারওয়াল কনফিগার করা হচ্ছে...${NC}"
-    
-    if ! command -v ufw &> /dev/null; then
-        apt update
-        apt install ufw -y
-    fi
-    
-    ufw --force disable
-    ufw default deny incoming
-    ufw default allow outgoing
-    ufw allow 22/tcp comment 'SSH'
-    ufw allow 443/tcp comment 'VLESS Reality'
-    ufw allow 8443/tcp comment 'VMess WebSocket'
-    ufw allow 8080/tcp comment 'Trojan'
-    ufw allow "$XUI_PORT"/tcp comment 'X-UI Panel'
-    ufw --force enable
-    
-    echo -e "${GREEN}✅ ফায়ারওয়াল কনফিগার সম্পন্ন!${NC}"
-}
-
-# Function to enable BBR
-setup_bbr() {
-    echo -e "${GREEN}🚀 BBR কনজেশন কন্ট্রোল সেটআপ করা হচ্ছে...${NC}"
-    
-    if [[ $(sysctl net.ipv4.tcp_congestion_control | awk '{print $3}') != "bbr" ]]; then
-        cat >> /etc/sysctl.conf <<EOF
-# BBR Congestion Control
-net.core.default_qdisc = fq
-net.ipv4.tcp_congestion_control = bbr
-EOF
-        sysctl -p
-        echo -e "${GREEN}✅ BBR সক্রিয় করা হয়েছে!${NC}"
-    else
-        echo -e "${GREEN}✅ BBR ইতিমধ্যে সক্রিয়!${NC}"
-    fi
+    echo -e "${GREEN}✅ ইনফরমেশন সেভ করা হয়েছে: /root/emidev_info.txt${NC}"
 }
 
 # Function to restart services
 restart_services() {
     echo -e "${GREEN}🔄 সার্ভিস রিস্টার্ট করা হচ্ছে...${NC}"
     
-    systemctl restart x-ui
-    systemctl enable x-ui
-    systemctl restart xray
-    systemctl enable xray
+    # Restart X-UI
+    systemctl restart x-ui 2>/dev/null || true
+    systemctl enable x-ui 2>/dev/null || true
     
-    sleep 3
-    
-    if systemctl is-active --quiet x-ui; then
-        echo -e "${GREEN}✅ X-UI প্যানেল সফলভাবে চালু হয়েছে!${NC}"
-    else
-        echo -e "${RED}❌ X-UI চালুতে সমস্যা!${NC}"
+    # Restart Xray if exists
+    if systemctl list-unit-files | grep -q xray; then
+        systemctl restart xray 2>/dev/null || true
     fi
     
-    if systemctl is-active --quiet xray; then
-        echo -e "${GREEN}✅ Xray সফলভাবে চালু হয়েছে!${NC}"
-    else
-        echo -e "${RED}❌ Xray চালুতে সমস্যা!${NC}"
-    fi
+    sleep 2
+    
+    echo -e "${GREEN}✅ সার্ভিস রিস্টার্ট সম্পন্ন!${NC}"
+}
+
+# Function to show final message
+show_final() {
+    clear
+    
+    echo -e "${GREEN}╔══════════════════════════════════════════════════════════════╗${NC}"
+    echo -e "${GREEN}║                                                              ║${NC}"
+    echo -e "${GREEN}║              🎉 INSTALLATION COMPLETED SUCCESSFULLY! 🎉       ║${NC}"
+    echo -e "${GREEN}║                                                              ║${NC}"
+    echo -e "${GREEN}╚══════════════════════════════════════════════════════════════╝${NC}"
+    echo ""
+    
+    echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo -e "${CYAN}                    🎛️ X-UI PANEL ACCESS${NC}"
+    echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo ""
+    echo -e "${GREEN}  🌐 URL:${NC}      http://$SERVER_IP:54321"
+    echo -e "${GREEN}  👤 Username:${NC} emidev"
+    echo -e "${GREEN}  🔒 Password:${NC} EmiDev@2026"
+    echo ""
+    echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo -e "${CYAN}                    📋 NEXT STEPS${NC}"
+    echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo ""
+    echo -e "${GREEN}  1.${NC} ব্রাউজারে উপরের URL এ যান"
+    echo -e "${GREEN}  2.${NC} X-UI প্যানেলে লগইন করুন"
+    echo -e "${GREEN}  3.${NC} 'Inbounds' মেনুতে গিয়ে নতুন কনফিগ তৈরি করুন"
+    echo -e "${GREEN}  4.${NC} '+ Add Inbound' বাটনে ক্লিক করে প্রোটোকল যোগ করুন"
+    echo ""
+    echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo -e "${CYAN}                    💾 SAVED INFORMATION${NC}"
+    echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo ""
+    echo -e "${GREEN}  সব তথ্য সেভ করা হয়েছে:${NC}"
+    echo -e "  cat /root/emidev_info.txt"
+    echo ""
+    echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo ""
+    echo -e "${BLUE}  ❤️  ধন্যবাদ emidev ব্যবহার করার জন্য!${NC}"
+    echo -e "${BLUE}  🔗 GitHub: https://github.com/manbdboy5-dot/emidev${NC}"
+    echo ""
 }
 
 # Main execution
 main() {
     update_system
     install_xui
-    configure_xui
+    get_server_info
     setup_firewall
     setup_bbr
+    create_backup_config
+    save_info
     restart_services
-    
-    echo ""
-    echo -e "${GREEN}╔══════════════════════════════════════════════════════════╗${NC}"
-    echo -e "${GREEN}║     🎉 emidev - X-UI Panel ইনস্টলেশন সম্পূর্ণ! 🎉        ║${NC}"
-    echo -e "${GREEN}╚══════════════════════════════════════════════════════════╝${NC}"
-    echo ""
-    
-    # Display info
-    cat /root/emidev_info.txt
-    
-    echo ""
-    echo -e "${YELLOW}💡 গুরুত্বপূর্ণ টিপস:${NC}"
-    echo -e "${CYAN}• X-UI প্যানেল খুলে ইনবাউন্ড কাস্টমাইজ করুন${NC}"
-    echo -e "${CYAN}• Reality এর জন্য Public Key প্যানেলে দেখাবে${NC}"
-    echo -e "${CYAN}• ক্লায়েন্ট কনফিগ প্যানেল থেকে কপি করুন${NC}"
-    echo ""
-    echo -e "${BLUE}📋 সব তথ্য সংরক্ষিত: ${YELLOW}cat /root/emidev_info.txt${NC}"
+    show_final
 }
 
 # Run main
